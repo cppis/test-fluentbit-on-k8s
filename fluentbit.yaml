@@ -1,0 +1,151 @@
+image:
+  repository: cr.fluentbit.io/fluent/fluent-bit
+  # Overrides the image tag whose default is {{ .Chart.AppVersion }}
+  tag: "latest-debug"
+
+service:
+  type: NodePort
+  port: 24224
+  labels: {}
+  annotations: {}
+#   prometheus.io/path: "/api/v1/metrics/prometheus"
+#   prometheus.io/port: "2020"
+#   prometheus.io/scrape: "true"
+
+resources:
+  limits:
+    cpu: 100m
+    memory: 256Mi
+  requests:
+    cpu: 10m
+    memory: 64Mi
+
+## https://docs.fluentbit.io/manual/administration/configuring-fluent-bit/configuration-file
+config:
+  service: |
+    [SERVICE]
+        Daemon Off
+        Flush {{ .Values.flush }}
+        Log_Level {{ .Values.logLevel }}
+        Parsers_File parsers.conf
+        Parsers_File custom_parsers.conf
+        HTTP_Server On
+        HTTP_Listen 0.0.0.0
+        HTTP_Port {{ .Values.metricsPort }}
+        Health_Check On
+
+  ## https://docs.fluentbit.io/manual/pipeline/inputs
+  inputs: |
+    [INPUT]
+        Name tail
+        Path /var/log/containers/*.log
+        multiline.parser docker, cri
+        Tag kube.*
+        Mem_Buf_Limit 5MB
+        Skip_Long_Lines On
+
+  ## https://docs.fluentbit.io/manual/pipeline/filters
+  filters: |
+    [FILTER]
+        Name kubernetes
+        Match kube.*
+        Merge_Log On
+        Keep_Log Off
+        K8S-Logging.Parser On
+        K8S-Logging.Exclude On
+
+    [FILTER]
+        Name        modify
+        Match       *
+        Hard_rename log message
+
+    # level is a common synonym for severity,
+    # the default field name in libraries such as GoLang's zap.
+    # populate severity with level, if severity does not exist.
+    [FILTER]
+        Name        modify
+        Match       kube_*
+        Copy        level severity
+
+  ## https://docs.fluentbit.io/manual/pipeline/outputs
+  outputs: |
+    #[OUTPUT]
+    #    Name stdout
+    #    Match *
+
+    [OUTPUT]
+        Name forward
+        Match *
+        Upstream /fluent-bit/etc/upstream.conf
+
+  ## https://docs.fluentbit.io/manual/administration/configuring-fluent-bit/classic-mode/upstream-servers
+  ## This configuration is deprecated, please use `extraFiles` instead.
+  upstream: {}
+
+  ## https://docs.fluentbit.io/manual/pipeline/parsers
+  customParsers: |
+    [PARSER]
+        Name        docker
+        Format      json
+        Time_Key    time
+        Time_Format %Y-%m-%dT%H:%M:%S.%L%z
+
+    #[PARSER]
+    #    Name        containerd
+    #    Format      regex
+    #    # The timestamp is described in https://www.rfc-editor.org/rfc/rfc3339#section-5.6
+    #    Regex       ^(?<time>[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt ][0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:[Zz]|[+-][0-9]{2}:[0-9]{2})) (?<stream>stdout|stderr) [^ ]* (?<log>.*)$
+    #    Time_Key    time
+    #    Time_Format %Y-%m-%dT%H:%M:%S.%L%z
+
+    [PARSER]
+        Name        json
+        Format      json
+
+  extraFiles:
+    upstream.conf: |
+      [UPSTREAM]
+          name        forward-balancing
+
+      [NODE]
+          name       node-01
+          host       127.0.0.1
+          port       24224
+
+      [NODE]
+          name       node-02
+          host       127.0.0.1
+          port       24224
+
+# The config volume is mounted by default, either to the existingConfigMap value, or the default of "fluent-bit.fullname"
+volumeMounts:
+  - name: config
+    mountPath: /fluent-bit/etc/fluent-bit.conf
+    subPath: fluent-bit.conf
+  - name: config
+    mountPath: /fluent-bit/etc/custom_parsers.conf
+    subPath: custom_parsers.conf
+
+daemonSetVolumes:
+  - name: varlog
+    hostPath:
+      path: /var/log
+  - name: varlibdockercontainers
+    hostPath:
+      path: /var/lib/docker/containers
+  - name: etcmachineid
+    hostPath:
+      path: /etc/machine-id
+      type: File
+
+daemonSetVolumeMounts:
+  - name: varlog
+    mountPath: /var/log
+  - name: varlibdockercontainers
+    mountPath: /var/lib/docker/containers
+    readOnly: true
+  - name: etcmachineid
+    mountPath: /etc/machine-id
+    readOnly: true
+
+logLevel: info
