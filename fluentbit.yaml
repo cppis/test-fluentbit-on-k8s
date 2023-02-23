@@ -109,7 +109,7 @@ config:
 
       [NODE]
           name       node-01
-          host       collector-fluentd-0
+          host       collector-fluentd-aggregator
           port       24224
 
       #[NODE]
