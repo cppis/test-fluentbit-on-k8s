@@ -45,6 +45,12 @@ config:
         Mem_Buf_Limit 5MB
         Skip_Long_Lines On
 
+    [INPUT]
+        Name forward
+        Tag_Prefix debug
+        Mem_Buf_Limit 5MB
+        Skip_Long_Lines On
+
   ## https://docs.fluentbit.io/manual/pipeline/filters
   filters: |
     [FILTER]
