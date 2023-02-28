@@ -82,9 +82,10 @@ config:
         Match *
 
     [OUTPUT]
-        Name forward
-        Match *
-        Upstream /fluent-bit/etc/upstream.conf
+        Name        kafka
+        Match       *
+        Brokers     kafka:9092
+        Topics      fluent-bit
 
   ## https://docs.fluentbit.io/manual/administration/configuring-fluent-bit/classic-mode/upstream-servers
   ## This configuration is deprecated, please use `extraFiles` instead.
@@ -118,21 +119,6 @@ config:
     [PARSER]
         Name        json
         Format      json
-
-  extraFiles:
-    upstream.conf: |
-      [UPSTREAM]
-          name        forward-balancing
-
-      [NODE]
-          name       node-01
-          host       collector-fluentd-aggregator
-          port       24224
-
-      #[NODE]
-      #    name       node-02
-      #    host       127.0.0.1
-      #    port       24224
 
 # The config volume is mounted by default, either to the existingConfigMap value, or the default of "fluent-bit.fullname"
 volumeMounts:
