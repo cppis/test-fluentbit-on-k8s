@@ -39,7 +39,7 @@ config:
     [INPUT]
         Name tail
         Path /var/log/containers/*.log
-        Exclude_Path /var/log/containers/aggregator-*.log,/var/log/containers/kindnet-*.log,/var/log/containers/collector-*.log
+        Exclude_Path /var/log/containers/aggregator-*.log,/var/log/containers/kindnet-*.log,/var/log/containers/collector-*.log,/var/log/containers/consumer-*.log
         multiline.parser docker, cri
         Tag kube.*
         Mem_Buf_Limit 5MB
