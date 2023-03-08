@@ -1,0 +1,77 @@
+ARG BASE_IMAGE=php:8.1-fpm
+FROM $BASE_IMAGE
+
+# php.ini setting
+RUN mv "$PHP_INI_DIR/php.ini-development" "$PHP_INI_DIR/php.ini"
+RUN cd /usr/local/etc \
+    && { \
+        echo; \
+        echo 'date.timezone = Asia/Seoul'; \
+    } | tee -a php/php.ini
+
+# default application install
+RUN apt-get update && apt-get upgrade -y && apt-get install -y wget rdate git unzip procps
+
+# php ext lib install
+RUN apt-get install -y libmemcached-dev zlib1g-dev libicu-dev libgeoip-dev libfreetype6-dev libpng-dev libjpeg-dev libzip-dev libyaml-dev graphviz librdkafka-dev \
+    && pecl install msgpack \
+    && pecl install igbinary \
+    && pecl install xdebug-3.1.5 \
+    && pecl install apcu \
+    && pecl install redis \
+    && pecl install yaml \
+    && pecl install xhprof \
+    && pecl install protobuf-3.21.6 \
+    && pecl install rdkafka \
+    && docker-php-ext-enable msgpack igbinary xdebug apcu redis opcache yaml xhprof protobuf \
+    && docker-php-ext-configure intl \
+    && docker-php-ext-install zip intl mysqli pdo_mysql pcntl \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install -j$(nproc) gd
+
+# php ext lib memcached setting
+RUN pecl install --onlyreqdeps --nobuild memcached-3.2.0 \
+    && cd /tmp/pear/temp/memcached/ \
+    && phpize \
+    && ./configure --with-php-config=/usr/local/bin/php-config --with-libmemcached-dir=no --with-zlib-dir=no --with-system-fastlz=no --enable-memcached-igbinary=yes --enable-memcached-msgpack=no --enable-memcached-json=no --enable-memcached-protocol=no --enable-memcached-sasl=yes --enable-memcached-session=yes \
+    && make \
+    && make install \
+    && docker-php-ext-enable memcached
+
+# php-fpm config override
+# 상대 경로이므로 future_cpb_web_server_env 경로에서 docker build 해야함
+COPY ./asset.docker/config/php-fpm/zzz-future.conf /usr/local/etc/php-fpm.d/zzz-future.conf
+
+# php-fpm extension override
+RUN cd /usr/local/etc \
+	&& { \
+		echo; \
+		echo 'xdebug.client_host=host.docker.internal'; \
+		echo 'xdebug.mode=debug'; \
+		echo 'xdebug.client_port=9000'; \
+		echo 'xdebug.start_with_request=trigger'; \
+		echo 'xdebug.remote_handler=dbgp'; \
+		echo 'xdebug.discover_client_host=false'; \
+	} | tee -a php/conf.d/docker-php-ext-xdebug.ini \
+	&& { \
+		echo; \
+		echo 'apc.enabled=1'; \
+		echo 'apc.enable_cli=1'; \
+		echo 'apc.mmap_file_mask=/tmp/acp.XXXXXX'; \
+	} | tee -a php/conf.d/docker-php-ext-apcu.ini \
+	&& { \
+	    echo; \
+	    echo 'memcached.serializer = "igbinary"'; \
+    } | tee -a php/conf.d/docker-php-ext-memcached.ini
+
+# composer install
+RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+
+# phpunit install
+ENV PHPUNIT_PATH="/usr/local/bin/phpunit"
+RUN wget -O $PHPUNIT_PATH https://phar.phpunit.de/phpunit-7.phar
+RUN chmod +x $PHPUNIT_PATH
+
+EXPOSE 9000
+
+WORKDIR /var/www/html
